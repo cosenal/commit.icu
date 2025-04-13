@@ -145,11 +145,7 @@ export default function Home() {
             )}
             {authedStrava && (
               <a
-                href="#"
-                onClick={() => {
-                  document.cookie = 'strava_username=; Max-Age=0; path=/';
-                  window.location.reload();
-                }}
+                href="/api/strava/logout"
                 className="text-red-600 underline hover:text-red-800 ml-2"
               >
                 (Log out of Strava)
@@ -177,6 +173,11 @@ export default function Home() {
           >
             Log in with Strava
           </Link>
+        )}
+        {!authedGitHub && !authedStrava && (
+          <p className="text-sm text-gray-600">
+            Please log in to GitHub or Strava to view your activity.
+          </p>
         )}
       </div>
 

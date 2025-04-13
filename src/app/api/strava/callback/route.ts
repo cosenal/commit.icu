@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const code = searchParams.get('code')
 
   if (!code) {
-    return NextResponse.json({ error: 'Missing code' }, { status: 400 })
+    return NextResponse.json({ error: 'Authorization code missing' }, { status: 400 })
   }
 
   const response = await fetch('https://www.strava.com/oauth/token', {
@@ -20,11 +20,24 @@ export async function GET(req: NextRequest) {
     }),
   })
 
+  if (!response.ok) {
+    const error = await response.json()
+    console.error('Error exchanging code for token:', error)
+    return NextResponse.json({ error: 'Failed to exchange code for token' }, { status: 500 })
+  }
+
   const data = await response.json()
+  const token = data.access_token
+
+  if (!token) {
+    return NextResponse.json({ error: 'Access token missing' }, { status: 500 })
+  }
+
+  console.log('Received Strava token:', token)
 
   const cookieStore = await cookies()
 
-  cookieStore.set('strava_token', data.access_token, {
+  cookieStore.set('strava_token', token, {
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
