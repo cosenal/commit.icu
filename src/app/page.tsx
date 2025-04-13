@@ -1,103 +1,202 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import {
+  eachDayOfInterval,
+  startOfWeek,
+  endOfWeek,
+  subYears,
+  format,
+  isAfter,
+  parseISO,
+  getDay,
+  getDate,
+} from 'date-fns'
+
+interface DayData {
+  date: string
+  status: 'none' | 'github' | 'strava' | 'both' | 'future'
+  commitCount: number
+  activityCount: number
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [data, setData] = useState<DayData[]>([])
+  const [authedStrava, setAuthedStrava] = useState(false)
+  const [authedGitHub, setAuthedGitHub] = useState(false)
+  const [username, setUsername] = useState<string | null>(null)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  useEffect(() => {
+    async function loadData() {
+      const [ghRes, stravaRes] = await Promise.all([
+        fetch('/api/github/data', { credentials: 'include' }).then((r) => r.json()),
+        fetch('/api/strava/data', { credentials: 'include' }).then((r) => r.json()),
+      ])
+
+      const cookieStr = document.cookie
+      const stravaName = cookieStr.split('; ').find((row) => row.startsWith('strava_username='))?.split('=')[1]
+      const githubName = cookieStr.split('; ').find((row) => row.startsWith('github_username='))?.split('=')[1]
+      if (stravaName || githubName) {
+        setUsername(decodeURIComponent(stravaName || githubName))
+      }
+
+      if (!stravaRes.error) setAuthedStrava(true)
+      if (!ghRes.error) setAuthedGitHub(true)
+
+      const githubMap = new Map<string, number>()
+      ghRes?.data?.user?.contributionsCollection?.contributionCalendar?.weeks?.forEach((week: any) => {
+        week.contributionDays.forEach((day: any) => {
+          if (day.contributionCount > 0) {
+            githubMap.set(day.date, day.contributionCount)
+          }
+        })
+      })
+
+      const stravaMap = new Map<string, number>()
+      if (Array.isArray(stravaRes)) {
+        stravaRes.forEach((activity: any) => {
+          const date = activity.start_date?.slice(0, 10)
+          if (date) {
+            stravaMap.set(date, (stravaMap.get(date) || 0) + 1)
+          }
+        })
+      }
+
+      const today = new Date()
+      const startDate = startOfWeek(subYears(today, 1), { weekStartsOn: 0 })
+      const endDate = new Date(today) // ensure today is included
+      const allDays = eachDayOfInterval({ start: startDate, end: endDate })
+
+      const firstDayOfWeek = getDay(allDays[0])
+      const paddedStart = Array.from({ length: firstDayOfWeek }, () => ({
+        date: '',
+        status: 'future',
+        commitCount: 0,
+        activityCount: 0,
+      }))
+
+      const mapped: DayData[] = allDays.map((d) => {
+        const dateStr = d.toISOString().slice(0, 10)
+        if (isAfter(d, today)) return { date: dateStr, status: 'future', commitCount: 0, activityCount: 0 }
+        const commits = githubMap.get(dateStr) || 0
+        const activities = stravaMap.get(dateStr) || 0
+
+        let status: DayData['status'] = 'none'
+        if (commits > 0 && activities > 0) status = 'both'
+        else if (commits > 0) status = 'github'
+        else if (activities > 0) status = 'strava'
+
+        return { date: dateStr, status, commitCount: commits, activityCount: activities }
+      })
+
+      setData([...paddedStart, ...mapped])
+    }
+
+    loadData()
+  }, [])
+
+  const colorMap: Record<DayData['status'], string> = {
+    none: 'bg-gray-100 border border-gray-200',
+    github: 'bg-green-400 border border-gray-200',
+    strava: 'bg-orange-400 border border-gray-200',
+    both: 'bg-[#a3a34a] text-white border border-gray-200',
+    future: 'bg-transparent',
+  }
+
+  const groupedByWeek: DayData[][] = []
+  for (let i = 0; i < data.length; i += 7) {
+    groupedByWeek.push(data.slice(i, i + 7))
+  }
+
+  const monthLabels = groupedByWeek.map((week, idx) => {
+    const firstDay = week[0]
+    if (!firstDay || !firstDay.date) return ''
+    const date = parseISO(firstDay.date)
+    if (idx === 0 || (idx > 0 && format(date, 'MMM') !== format(parseISO(groupedByWeek[idx - 1][0].date), 'MMM'))) {
+      return format(date, 'MMM')
+    }
+    return ''
+  })
+
+  const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+  return (
+    <main className="p-8 bg-white min-h-screen">
+      <head>
+        <link rel="icon" href="/icon.png" />
+      </head>
+      <header className="mb-6 flex items-center justify-between">
+        <h1 className="text-4xl font-bold text-black">commit.icu</h1>
+        {username && (
+          <p className="text-sm text-black">Logged in as <strong>{username}</strong></p>
+        )}
+        
+      </header>
+      <p className="text-sm text-gray-600 max-w-xxl">
+          Your commitment to coding and VO2max.
+      </p>
+      <div className="mb-6 flex flex-wrap gap-4">
+        {!authedGitHub && (
+          <Link
+            href="/api/github/login"
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Log in with GitHub
+          </Link>
+        )}
+        {!authedStrava && (
+          <Link
+            href="/api/strava/login"
+            className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
           >
-            Read our docs
-          </a>
+            Log in with Strava
+          </Link>
+        )}
+      </div>
+
+      <section className="overflow-x-auto">
+        <div className="ml-10 flex text-xs text-gray-500 mb-1">
+          {monthLabels.map((label, idx) => (
+            <div key={idx} className="w-4 text-center">
+              {label}
+            </div>
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+
+        <div className="flex gap-[3px]">
+          <div className="flex flex-col text-xs text-gray-400 mr-2 gap-[3px]">
+            {weekdayLabels.map((label) => (
+              <div key={label} className="w-6 h-4 leading-none">{label[0]}</div>
+            ))}
+          </div>
+
+          {groupedByWeek.map((week, wIdx) => (
+            <div key={wIdx} className="flex flex-col gap-[3px]">
+              {week.map((day, dIdx) => (
+                <div
+                  key={dIdx}
+                  className={`w-4 h-4 text-xs flex items-center justify-center rounded-sm ${colorMap[day.status]}`}
+                  title={
+                    day.status !== 'future'
+                      ? `${day.date}\n🟩 ${day.commitCount} commits\n🟧 ${day.activityCount} activities`
+                      : ''
+                  }
+                >
+                  {''}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <footer className="mt-10 text-sm text-gray-700 flex flex-col gap-3">
+        <p>🟩 GitHub | 🟧 Strava | 🫒 Both</p>
+        <p className="text-xs text-gray-400">
+          Made by <a href="https://github.com/cosenal" className="underline hover:text-black" target="_blank">@cosenal</a> ☕️
+        </p>
       </footer>
-    </div>
-  );
+    </main>
+  )
 }
