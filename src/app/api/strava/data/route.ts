@@ -1,11 +1,12 @@
 // src/app/api/strava/data/route.ts
 import { cookies } from 'next/headers'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
 let cache: any = null
-let lastFetched: number = 0
+let activities: any[] = []
+let lastFetched: number = 0 // Initialize lastFetched here
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies()
   const token = cookieStore.get('strava_token')?.value
 
@@ -18,7 +19,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(cache)
   }
 
-  let activities: any[] = []
   const perPage = 100
   const maxPages = 3
 
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   }
 
   cache = activities
-  lastFetched = now
+  lastFetched = now // Set the lastFetched value when the data is updated
 
   return NextResponse.json(activities)
 }

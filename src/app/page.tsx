@@ -5,13 +5,11 @@ import Link from 'next/link'
 import {
   eachDayOfInterval,
   startOfWeek,
-  endOfWeek,
   subYears,
   format,
   isAfter,
   parseISO,
   getDay,
-  getDate,
 } from 'date-fns'
 
 interface DayData {
@@ -38,15 +36,15 @@ export default function Home() {
       const stravaName = cookieStr.split('; ').find((row) => row.startsWith('strava_username='))?.split('=')[1]
       const githubName = cookieStr.split('; ').find((row) => row.startsWith('github_username='))?.split('=')[1]
       if (stravaName || githubName) {
-        setUsername(decodeURIComponent(stravaName || githubName))
+        setUsername(decodeURIComponent(stravaName || githubName || ''))
       }
 
       if (!stravaRes.error) setAuthedStrava(true)
       if (!ghRes.error) setAuthedGitHub(true)
 
       const githubMap = new Map<string, number>()
-      ghRes?.data?.user?.contributionsCollection?.contributionCalendar?.weeks?.forEach((week: any) => {
-        week.contributionDays.forEach((day: any) => {
+      ghRes?.data?.user?.contributionsCollection?.contributionCalendar?.weeks?.forEach((week: { contributionDays: Array<{ date: string; contributionCount: number }> }) => {
+        week.contributionDays.forEach((day: { date: string; contributionCount: number }) => {
           if (day.contributionCount > 0) {
             githubMap.set(day.date, day.contributionCount)
           }
@@ -55,7 +53,7 @@ export default function Home() {
 
       const stravaMap = new Map<string, number>()
       if (Array.isArray(stravaRes)) {
-        stravaRes.forEach((activity: any) => {
+        stravaRes.forEach((activity: { start_date: string }) => {
           const date = activity.start_date?.slice(0, 10)
           if (date) {
             stravaMap.set(date, (stravaMap.get(date) || 0) + 1)
@@ -69,16 +67,16 @@ export default function Home() {
       const allDays = eachDayOfInterval({ start: startDate, end: endDate })
 
       const firstDayOfWeek = getDay(allDays[0])
-      const paddedStart = Array.from({ length: firstDayOfWeek }, () => ({
+      const paddedStart: DayData[] = Array.from({ length: firstDayOfWeek }, () => ({
         date: '',
         status: 'future',
         commitCount: 0,
         activityCount: 0,
       }))
 
-      const mapped: DayData[] = allDays.map((d) => {
+      const mapped: DayData[] = allDays.map((d: Date) => {
         const dateStr = d.toISOString().slice(0, 10)
-        if (isAfter(d, today)) return { date: dateStr, status: 'future', commitCount: 0, activityCount: 0 }
+        if (isAfter(d, today)) return { date: dateStr, status: 'future' as const, commitCount: 0, activityCount: 0 }
         const commits = githubMap.get(dateStr) || 0
         const activities = stravaMap.get(dateStr) || 0
 

@@ -1,11 +1,11 @@
 // src/app/api/github/data/route.ts
 import { cookies } from 'next/headers'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 
-let cache: any = null
+let cache: Record<string, any> | null = null
 let lastFetched: number = 0
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const cookieStore = await cookies()
   const token = cookieStore.get('github_token')?.value
   const username = cookieStore.get('github_username')?.value
