@@ -1,12 +1,12 @@
 // src/app/api/strava/data/route.ts
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 let cache: any = null
 let activities: any[] = []
 let lastFetched: number = 0 // Initialize lastFetched here
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const cookieStore = await cookies()
   const token = cookieStore.get('strava_token')?.value
 
@@ -15,7 +15,10 @@ export async function GET() {
   }
 
   const now = Date.now()
-  if (cache && now - lastFetched < 1000 * 60 * 60 * 24) {
+  const isDev = process.env.NODE_ENV === 'development'
+  const force = isDev && req.nextUrl.searchParams.get('force') === 'true'
+  
+  if (!force && cache && Date.now() - lastFetched < 1000 * 60 * 60 * 24) {
     return NextResponse.json(cache)
   }
 
